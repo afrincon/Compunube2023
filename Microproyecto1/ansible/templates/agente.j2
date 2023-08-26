@@ -1,0 +1,11 @@
+{
+    "data_dir": "{{ consul_data_dir | default('/opt/consul') }}",
+    "node_name": "{{ consul_node_name | default(ansible_hostname) }}",
+    "datacenter": "{{ consul_datacenter | default('US-east') }}",
+    "bind_addr": "{{ ansible_all_ipv4_addresses[0] }}",
+    "client_addr": "{{ consul_data_dir | default('0.0.0.0') }}",
+    "bootstrap_expect": {{ consul_bootrap_expect | default(3) }},
+    "server": true,
+    "retry_join": ["172.16.56.3", "172.16.56.4", "172.16.56.5"],
+    "ui": true
+}

@@ -1,0 +1,12 @@
+[local]
+localhost ansible_connection=local
+
+[consul_servers]
+proxyserver ansible_host=172.16.56.3 ansible_user='vagrant' ansible_ssh_private_key_file=/home/vagrant/.ssh/id_rsa_microproyecto_1
+node1       ansible_host=172.16.56.4 ansible_user='vagrant' ansible_ssh_private_key_file=/home/vagrant/.ssh/id_rsa_microproyecto_1
+node2       ansible_host=172.16.56.5 ansible_user='vagrant' ansible_ssh_private_key_file=/home/vagrant/.ssh/id_rsa_microproyecto_1
+
+[node_servers]
+node1       ansible_host=172.16.56.4 ansible_user='vagrant' ansible_ssh_private_key_file=/home/vagrant/.ssh/id_rsa_microproyecto_1
+node2       ansible_host=172.16.56.5 ansible_user='vagrant' ansible_ssh_private_key_file=/home/vagrant/.ssh/id_rsa_microproyecto_1
+

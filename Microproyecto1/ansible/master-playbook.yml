@@ -1,0 +1,179 @@
+---
+- hosts: all
+  tasks:
+    - debug:
+        var: ansible_all_ipv4_addresses[0]
+
+- hosts: local
+  gather_facts: true
+
+
+  vars:
+    ssh_key_filename: id_rsa_microproyecto_1    
+
+  tasks:
+    - name: Change config of ansible to disable Host key verification
+      become: true
+      blockinfile:
+        path: /etc/ansible/ansible.cfg
+        block: |
+          [defaults]
+          host_key_checking = False
+    
+    - name: Install sshpass
+      become: true
+      apt:
+        name: sshpass
+        state: present
+
+    - name: generate ssh keys "{{ssh_key_filename}}"
+      openssh_keypair:
+        path: "~/.ssh/{{ssh_key_filename}}"
+        type: rsa
+        size: 4096
+        state: present
+        force: no
+    
+    - name: copy keys
+      shell: |
+        chmod 600 /home/vagrant/.ssh/{{ssh_key_filename}}
+        chmod 600 /home/vagrant/.ssh/{{ssh_key_filename}}.pub
+        sshpass -p vagrant ssh-copy-id -i /home/vagrant/.ssh/{{ssh_key_filename}} -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" vagrant@172.16.56.3
+        sshpass -p vagrant ssh-copy-id -i /home/vagrant/.ssh/{{ssh_key_filename}} -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" vagrant@172.16.56.4
+        sshpass -p vagrant ssh-copy-id -i /home/vagrant/.ssh/{{ssh_key_filename}} -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" vagrant@172.16.56.5
+
+    - name: Install module Manage consul instances
+      shell: |
+        ansible-galaxy collection install community.general
+  
+- hosts: consul_servers
+  gather_facts: true
+  become: true
+
+  tasks:
+    - name: Update cache
+      apt:
+        update_cache: yes
+
+    - name: Install wget
+      apt:
+        name: wget
+        state: present
+
+    - name: preconfigure for consul download
+      shell: |
+        wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+    
+    - name: Update cache
+      apt:
+        update_cache: yes
+
+    - name: Install consul
+      apt:
+        pkg:
+          - consul
+        state: present
+
+    - name: Set Up Consul Agent Conf
+      template: src=templates/agente.j2 dest=/etc/consul.d/agent.json
+
+    - name: Enable service consul
+      ansible.builtin.systemd:
+        name: consul
+        enabled: true
+
+    - name: Make sure a service unit is running
+      ansible.builtin.systemd:
+        state: restarted
+        name: consul
+
+- hosts: proxyserver
+  gather_facts: true
+  become: true
+
+  tasks:
+    - name: modify ip adress consul server
+      shell: |
+        sed -i 's/10.0.2.15/172.16.56.3/g' /etc/consul.d/agent.json
+
+    - name: Restart consul to join to cluster
+      ansible.builtin.systemd:
+        state: restarted
+        name: consul
+
+    - name: get consul members message
+      shell: consul operator raft list-peers
+      register: consul_output
+
+    - name: print consul members
+      debug:
+        msg: "{{ consul_output.stdout_lines }}" 
+
+    - name: Install packages to use haproxy
+      apt:
+        pkg:
+          - haproxy
+
+    - name: Set Up Haproxy Conf
+      template: src=haproxy.cfg dest=/etc/haproxy/haproxy.cfg
+
+    - name: Enable service haproxy
+      ansible.builtin.systemd:
+        name: haproxy
+        enabled: true
+
+    - name: start haproxy services
+      ansible.builtin.systemd:
+        state: restarted
+        name: haproxy
+
+- hosts: node_servers  
+  gather_facts: true
+
+  tasks:
+    - name: install git
+      become: true
+      apt:
+        pkg:
+          - git
+
+    - name: install nodejs
+      shell: |
+        curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && sudo apt-get install -y nodejs
+
+    - name: Git checkout
+      ansible.builtin.git:
+        repo: 'https://github.com/omondragon/consulService'
+        dest: /home/vagrant/app
+
+    - name: Install "express" node.js package.
+      community.general.npm:
+        name: express
+        path: /home/vagrant/app/app
+
+    - name: Install "consul" node.js package.
+      community.general.npm:
+        name: consul
+        path: /home/vagrant/app/app
+
+    - name: modify microservice name
+      shell: |
+        sed -i 's/mymicroservice/microproyecto/g' /home/vagrant/app/app/index.js
+
+    - name: modify indexjs host ip
+      shell: |
+        sed -i "s/192.168.100.3/{{ansible_all_ipv4_addresses[0]}}/g" /home/vagrant/app/app/index.js
+
+    - name: copy node script
+      copy: 
+        src: "script.sh"
+        dest: "/home/vagrant"
+
+    - name: Execute the script
+      shell:
+        "chmod a+x /home/vagrant/script.sh &&  nohup /home/vagrant/script.sh &"
+      async: 120  Maximum allowed time in Seconds
+      poll: 05  Polling Interval in Seconds
+   
+
